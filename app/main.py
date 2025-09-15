@@ -1,78 +1,43 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from typing import List
 from app import models, schemas, database
+from fastapi.middleware.cors import CORSMiddleware
 
+from fastapi_auth_jwt import JWTAuthenticationMiddleware
+from app.routers.usuarios import auth_backend
+from app.dependencies import get_db
+from app.routers.usuarios import router as routerUsuarios
+
+
+
+# Create FastAPI app and add middleware
 app = FastAPI()
+
+app.add_middleware(
+    JWTAuthenticationMiddleware,
+    backend=auth_backend,
+    exclude_urls=["/registro", "/login"],
+)
+
+origins = [
+    "*", 
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,       # Lista de orígenes permitidos
+    allow_credentials=True,
+    allow_methods=["*"],         # Métodos HTTP permitidos
+    allow_headers=["*"],         # Headers permitidos
+)
 
 models.Base.metadata.create_all(bind=database.engine)
 
 
-# --- Dependencia DB ---
-def get_db():
-    db = database.SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+app.include_router(routerUsuarios)
 
 
-# ==========================
-#   USUARIOS
-# ==========================
-@app.post("/usuarios/", response_model=schemas.UsuarioResponse)
-def crear_usuario(usuario: schemas.UsuarioCreate, db: Session = Depends(get_db)):
-    db_usuario = (
-        db.query(models.Usuario).filter(models.Usuario.email == usuario.email).first()
-    )
-    if db_usuario:
-        raise HTTPException(status_code=400, detail="Email ya registrado")
-    nuevo = models.Usuario(
-        email=usuario.email,
-        hashed_password=usuario.password,  # ⚠️ en producción encriptar con bcrypt
-        rol=usuario.rol,
-    )
-    db.add(nuevo)
-    db.commit()
-    db.refresh(nuevo)
-    return nuevo
-
-
-@app.get("/usuarios/", response_model=List[schemas.UsuarioResponse])
-def listar_usuarios(db: Session = Depends(get_db)):
-    return db.query(models.Usuario).all()
-
-
-@app.get("/usuarios/{usuario_id}", response_model=schemas.UsuarioResponse)
-def detalle_usuario(usuario_id: int, db: Session = Depends(get_db)):
-    usuario = db.query(models.Usuario).filter(models.Usuario.id == usuario_id).first()
-    if not usuario:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    return usuario
-
-
-@app.put("/usuarios/{usuario_id}", response_model=schemas.UsuarioResponse)
-def actualizar_usuario(
-    usuario_id: int, datos: schemas.UsuarioBase, db: Session = Depends(get_db)
-):
-    usuario = db.query(models.Usuario).filter(models.Usuario.id == usuario_id).first()
-    if not usuario:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    usuario.email = datos.email
-    usuario.rol = datos.rol
-    db.commit()
-    db.refresh(usuario)
-    return usuario
-
-
-@app.delete("/usuarios/{usuario_id}")
-def eliminar_usuario(usuario_id: int, db: Session = Depends(get_db)):
-    usuario = db.query(models.Usuario).filter(models.Usuario.id == usuario_id).first()
-    if not usuario:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    db.delete(usuario)
-    db.commit()
-    return {"ok": True, "mensaje": "Usuario eliminado"}
 
 
 # ==========================
@@ -82,6 +47,9 @@ def eliminar_usuario(usuario_id: int, db: Session = Depends(get_db)):
 def crear_emprendedor(
     emprendedor: schemas.EmprendedorCreate, db: Session = Depends(get_db)
 ):
+    """
+    Crear un nuevo emprendedor. Requiere que exista un usuario.
+    """
     usuario = (
         db.query(models.Usuario)
         .filter(models.Usuario.id == emprendedor.usuario_id)
@@ -101,11 +69,17 @@ def crear_emprendedor(
 
 @app.get("/emprendedores/", response_model=List[schemas.EmprendedorResponse])
 def listar_emprendedores(db: Session = Depends(get_db)):
+    """
+    Obtener todos los emprendedores.
+    """
     return db.query(models.Emprendedor).all()
 
 
 @app.get("/emprendedores/{emprendedor_id}", response_model=schemas.EmprendedorResponse)
 def detalle_emprendedor(emprendedor_id: int, db: Session = Depends(get_db)):
+    """
+    Obtener todos los datos de un emprendedor
+    """
     emprendedor = (
         db.query(models.Emprendedor)
         .filter(models.Emprendedor.id == emprendedor_id)
@@ -120,6 +94,9 @@ def detalle_emprendedor(emprendedor_id: int, db: Session = Depends(get_db)):
 def actualizar_emprendedor(
     emprendedor_id: int, datos: schemas.EmprendedorBase, db: Session = Depends(get_db)
 ):
+    """
+    Actualizar un emprendedor, dada su id.
+    """
     emprendedor = (
         db.query(models.Emprendedor)
         .filter(models.Emprendedor.id == emprendedor_id)
@@ -136,6 +113,9 @@ def actualizar_emprendedor(
 
 @app.delete("/emprendedores/{emprendedor_id}")
 def eliminar_emprendedor(emprendedor_id: int, db: Session = Depends(get_db)):
+    """
+    Eliminar un emprendedor, dada su ID.
+    """
     emprendedor = (
         db.query(models.Emprendedor)
         .filter(models.Emprendedor.id == emprendedor_id)
@@ -153,6 +133,9 @@ def eliminar_emprendedor(emprendedor_id: int, db: Session = Depends(get_db)):
     response_model=list[schemas.ServicioResponse],
 )
 def listar_servicios_y_turnos(emprendedor_id: int, db: Session = Depends(get_db)):
+    """
+    Dada la Id de un emprendedor, listar todos los servicios que tiene disponibles.
+    """
     emprendedor = (
         db.query(models.Usuario)
         .filter(
@@ -349,3 +332,32 @@ def eliminar_reserva(reserva_id: int, db: Session = Depends(get_db)):
     db.delete(reserva)
     db.commit()
     return {"ok": True, "mensaje": "Reserva eliminada"}
+
+
+@app.get("/usuarios/{usuario_id}/reservas", response_model=list[schemas.ReservaOut])
+def listar_reservas_usuario(usuario_id: int, db: Session = Depends(get_db)):
+    usuario = db.query(models.Usuario).filter(models.Usuario.id == usuario_id).first()
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    reservas = (
+        db.query(models.Reserva)
+        .join(models.Turno, models.Reserva.turno_id == models.Turno.id)
+        .join(models.Servicio, models.Turno.servicio_id == models.Servicio.id)
+        .filter(models.Reserva.usuario_id == usuario_id)
+        .all()
+    )
+
+    resultados = [
+        schemas.ReservaOut(
+            id=r.id,
+            turno_id=r.turno.id,
+            fecha_hora_inicio=r.turno.fecha_hora_inicio,
+            precio=r.turno.precio,
+            servicio_nombre=r.turno.servicio.nombre,
+            emprendedor_id=r.turno.servicio.emprendedor_id,
+        )
+        for r in reservas
+    ]
+    return resultados
+

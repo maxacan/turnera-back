@@ -1,3 +1,5 @@
+from typing import Optional
+from pydantic import Field
 from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Float, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -8,8 +10,11 @@ class Usuario(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String, unique=True, index=True, nullable=False)
-    hashed_password = Column(String, nullable=False)
+    username = Column(String, unique=True, index=True, nullable=False)
+    password = Column(String, nullable=False)
     rol = Column(String, default="cliente")  # cliente o emprendedor
+
+    token= Column(String, nullable=True)
 
     emprendedor = relationship("Emprendedor", back_populates="usuario", uselist=False)
     reservas = relationship("Reserva", back_populates="usuario")

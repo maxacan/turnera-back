@@ -3,6 +3,25 @@ from datetime import datetime
 from typing import Optional, List
 
 
+from pydantic import BaseModel
+
+# ===================== JWT =================================
+
+class RegisterSchema(BaseModel):
+    username: str
+    password: str
+    email: EmailStr
+    rol: str = "cliente"
+
+
+class LoginSchema(BaseModel):
+    username: str
+    password: str
+
+
+__all__ = ["RegisterSchema", "LoginSchema"]
+
+
 # ---------- Usuario ----------
 class UsuarioBase(BaseModel):
     email: EmailStr
@@ -17,7 +36,7 @@ class UsuarioResponse(UsuarioBase):
     id: int
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 # ---------- Emprendedor ----------
@@ -108,6 +127,18 @@ class ReservaCreate(ReservaBase):
 
 class ReservaResponse(ReservaBase):
     id: int
+
+    class Config:
+        orm_mode = True
+
+
+class ReservaOut(BaseModel):
+    id: int
+    turno_id: int
+    fecha_hora_inicio: datetime
+    precio: Optional[float]
+    servicio_nombre: str
+    emprendedor_id: int
 
     class Config:
         orm_mode = True
